@@ -4,6 +4,11 @@
 # Simple Drupal src tree manager
 # @see color
 # @author Alister Lewis-Bowen [alister@different.com]
+# @todo Fix info command on a specific module branch
+# @todo Add the theme context
+# @todo Clean up the all context
+# @todo Documentation!
+# @todo Package for google-code
 # ----------------------------------------------------------------------------
 # This software is distributed under the the MIT License.
 #
@@ -658,6 +663,7 @@ function cvsCoModule() {
 		fi;
 		
 	fi;
+	
 
 	status done;
 }
@@ -759,7 +765,8 @@ while (( "$#" )); do
 		# Context for an action
 		core | C )				CONTEXT=core;;
 		module | M )			CONTEXT=module;;
-		theme | T)				CONTEXT=theme;;
+		theme | T )				CONTEXT=theme;;
+		all )							CONTEXT=all;;
 		
 		# Action based on context
 		retrieve | get )	ACTION=get;;
