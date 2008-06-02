@@ -433,75 +433,77 @@ function delete() {
 }
 
 # Function: Information for a context within the Drupal source tree
-# Usage: info [core|all] [branch]
-# Usage: info [module|theme|all] [project|all] [branch]
+# Usage: info [core|all] [branch|-]
+# Usage: info [module|theme|all] [project|-] [branch]
 # ----------------------------------------------------------------------------
 
 function info() {
 	local _context=${1:-$CONTEXT};
-	local _project=${2:-$PROJECT};
-	local _branch=${3:-$BRANCH};
+	local _project;
+	local _branch;
+	local _line;
+	
+	if [[ "$_context" == "core" ]]; then
+		_branch=${2:-$BRANCH};
+	else
+		_project=${2:-$PROJECT};
+		_branch=${3:-$BRANCH};
+	fi;
 	
 	case "$_context" in
 	
 		'' | all )
-			info core;
-			info module;
-			#info theme;
+			info core ${2:-$BRANCH};
+			info module ${2:-$PROJECT} ${3:-$BRANCH};
+			info theme ${2:-$PROJECT} ${3:-$BRANCH};
 			;;
 			
 		core )
 			cd $TREE_CORE;
+			echo;
+			echo "$(color bd)Drupal core...$(color)";
 			case "$_branch" in
-				'' | all )
+				'' | - )
 					for _dir in `ls`; do
-						echo -n 'Core ';
 						getCVStag core $_dir; echo;
 					done;;
 				* )
-					echo -n 'Core ';
 					getCVStag core $_branch; echo;
 			esac;;
 			
-		module )
-			cd $TREE_MODULE;
+		module | theme )
+			if [ "$_context" == 'module' ]; then
+				cd $TREE_MODULE;
+			else 
+				cd $TREE_THEME;
+			fi;
+			echo;
+			echo "$(color bd)Drupal $_context contrib...$(color)";
+			echo;
+			echo "$(color bd)Name              Branch  Tag            Description$(color)";
+			_line="%-15s   %-5s   %-13s  $(color cyan)%-22s$(color)\n";
 			case "$_project" in
-				'' | all )
+				'' | - )
 					if [[ -d $_branch && "$_branch" ]]; then
 						cd $_branch;
 						for _project in `ls`; do
-							echo -en "Module\t$_project\t($_branch/";
-							getCVStag module $_branch $_project;
-							echo -en ")\t";
-							getModuleDescription $_project $_branch;
-							echo;
+							printf "$_line" $_project $_branch $(getCVStag module $_branch $_project) "$(getModuleDescription $_project $_branch)";
 						done;
 					else
 						for _dir in `ls`; do
 							cd $TREE_MODULE/$_dir;
 							for _project in `ls`; do
-								echo -en "Module\t$_project\t($_dir/";
-								getCVStag module $_dir $_project;
-								echo -en ")\t";
-								getModuleDescription $_project $_dir;
-								echo;
+								printf "$_line" $_project $_dir $(getCVStag module $_dir $_project) "$(getModuleDescription $_project $_dir)";
 							done;
 						done;
 					fi;;	
 				* )
 					if [ "$_branch" ]; then
-						echo -en "Module\t$_project\t($_branch/";
-						getCVStag module $_branch $_project;
-						echo -en ")\t";
-						getModuleDescription $_project $_branch;
-						echo;
+						printf "$_line" $_project $_branch $(getCVStag module $_branch $_project) "$(getModuleDescription $_project $_branch)";
+
 					else
 						for _dir in `find . | egrep $_project\\.info | cut -d'/' -f2`; do
-							echo -en "Module\t$_project\t($_dir/";
-							getCVStag module $_dir $_project;
-							echo -en ")\t";
-							getModuleDescription $_project $_dir;
-							echo;
+							printf "$_line" $_project $_dir $(getCVStag module $_dir $_project) "$(getModuleDescription $_project $_dir)";
 						done;
 					fi;; 
 			esac;;
@@ -736,7 +738,7 @@ function getCVStag() {
 function getModuleDescription() {
 	local _project=${1:-devel};
 	local _branch=${2:-HEAD};
-	local _desc=`cat $TREE_MODULE/$_branch/$_project/$_project.info | egrep "^description" | cut -f2 -d '='`;
+	local _desc=`find $TREE_MODULE/$_branch/$_project -name $_project.info | xargs egrep "^description" | cut -f2 -d '=' | tr -d '\"'`;
 	echo -n ${_desc:1};
 }
 
