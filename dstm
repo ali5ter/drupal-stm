@@ -4,7 +4,6 @@
 # Simple Drupal src tree manager
 # @see color
 # @author Alister Lewis-Bowen [alister@different.com]
-# @todo Fix info command on a specific module branch
 # @todo Add the theme context
 # @todo Clean up the all context
 # @todo Documentation!
@@ -73,10 +72,15 @@ TREE_THEME=${DSTM_TREE_THEME:-$BASE/contrib/themes};
 
 PROFILE=${DSTM_PROFILE:-$BASE/profile};
 
-# Default CVS tag
+# Error log location
 # ----------------------------------------------------------------------------
 
 ERROR_LOG=${DSTM_ERROR_LOG:-$BASE/error.log};
+
+# Defined editor
+# ----------------------------------------------------------------------------
+
+EDITOR=${EDITOR:-vi};
 
 # Function: Help
 # ----------------------------------------------------------------------------
@@ -151,12 +155,17 @@ function clean() {
 }
 
 # Function: Example data for a dstm profile
+# @todo plugable profiles
 # ----------------------------------------------------------------------------
 
 function profile() {
-	status "Creating sample profile...";
-	if [ ! -e $PROFILE ]; then
-		cat > $PROFILE <<'endOfExampleProfileContent'
+	local _action=${1:-show};
+	
+	case "$_action" in
+		sample )
+			status "Creating sample profile...";
+			if [ ! -e $PROFILE ]; then
+				cat > $PROFILE <<'endOfExampleProfileContent'
 # ----------------------------------------------------------------------------
 # @file Drupal source tree manager (dstm) Profile
 # @version $Id$
@@ -202,8 +211,48 @@ LockModuleVersion date 5 1-8
 LockModuleVersion actions 5 2-4
 LockModuleVersion workflow 5 2-2
 endOfExampleProfileContent
-	fi;
-	status done;
+			fi;
+			status done;;
+			
+		update )
+			if [ ! -e $PROFILE ]; then
+				echo -n "I could not find an existing profile. ";
+				echo "As a starting point, I can create a sample profile for you to edit.";
+				echo -n "$(color bd)Should I create a sample profile (Yes|No) ? $(color off): ";
+				read confirmation;
+				if [ "$confirmation" == 'Yes' ]; then
+					echo;
+					profile sample;
+				fi;
+				echo;
+			fi;
+			status "Updating dstm profile...";
+			$EDITOR $PROFILE 2>>$ERROR_LOG;
+			status done;;
+		
+		delete )
+			if [[ -e $PROFILE && -z "$FORCE" ]]; then
+				echo -n "I am about to delete your existing dstm profile. ";
+				echo "Doing this removes my memory of default branches in your source tree, version dependencies, etc.";
+				echo -n "$(color bd)Are you ready to continue (Yes|No) ? $(color off): ";
+				read confirmation;
+				if [ "$confirmation" != 'Yes' ]; then
+					echo "$(color green)$(color bd)Cancelling$(color off)";
+					exit 1;
+				fi;
+				echo;
+			fi;
+			status "Deleting dstm profile...";
+			rm -fR $PROFILE 2>>$ERROR_LOG;
+			status done;;
+			
+		show )
+			status "This is your current dstm profile...";
+			echo;
+			echo;
+			cat $PROFILE;;
+			
+	esac;
 }
 
 # Function: Create a list of branches from the profile
@@ -236,8 +285,6 @@ function profileModules() {
 # ----------------------------------------------------------------------------
 
 function build() {
-	profileBranches;
-	profileModules;
 	get core;
 	get module;
 	get theme;
@@ -301,6 +348,9 @@ function get() {
 				fi;
 			fi;;
 			
+		profile )
+			profile sample;;
+			
 	esac;
 }
 
@@ -359,6 +409,10 @@ function update() {
 						done;
 					fi;; 
 			esac;;
+			
+		profile )
+			profile update;;
+			
 	esac;
 }
 
@@ -429,6 +483,10 @@ function delete() {
 						done;
 					fi;;
 			esac;;
+			
+		profile )
+			profile delete;;
+			
 	esac;
 }
 
@@ -507,6 +565,10 @@ function info() {
 						done;
 					fi;; 
 			esac;;
+			
+		profile )
+			profile show;;
+			
 	esac;
 }
 
@@ -742,6 +804,12 @@ function getModuleDescription() {
 	echo -n ${_desc:1};
 }
 
+# Pre process
+# ----------------------------------------------------------------------------
+
+profileBranches;
+profileModules;
+	
 # Parse input arguments
 # ----------------------------------------------------------------------------
 
@@ -752,22 +820,21 @@ while (( "$#" )); do
 	case "$1" in
 		
 		# Options
-		-q | --quiet )	QUIET=1;;
+		-q | --quiet )		QUIET=1;;
 		-v | --verbose )	VERBOSE=1;;
 		-f | --force )		FORCE=1;;
 		
 		# General actions
 		help )						help;;
-		init )  					clean; profile; build;;
+		init )  					clean; profile sample; build;;
 		clean )						clean;;
-		profile )					profile;;
 		build )						build;;
-		refresh )					refresh;;
 		
 		# Context for an action
 		core | C )				CONTEXT=core;;
 		module | M )			CONTEXT=module;;
 		theme | T )				CONTEXT=theme;;
+		profile )					CONTEXT=profile;;
 		all )							CONTEXT=all;;
 		
 		# Action based on context
