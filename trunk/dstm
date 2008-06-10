@@ -155,30 +155,34 @@ function clean() {
 }
 
 # Function: Example data for a dstm profile
-# @todo plugable profiles
+# Usage: profile [show|update|delete]
+#        profile import file
+#        profile export [file]
 # ----------------------------------------------------------------------------
 
 function profile() {
 	local _action=${1:-show};
+	local _timestamp=`date +"%H-%M_%Y-%b-%d"`;
+	local _file=${2-./dstm-$_timestamp.profile};
 	
 	case "$_action" in
 		sample )
 			status "Creating sample profile...";
 			if [ ! -e $PROFILE ]; then
-				cat > $PROFILE <<'endOfExampleProfileContent'
+				cat > $PROFILE <<_END_OF_SAMPLE_PROFILE_;
 # ----------------------------------------------------------------------------
 # @file Drupal source tree manager (dstm) Profile
-# @version $Id$
+# @created $_timestamp
+# @modified $_timestamp
 # ----------------------------------------------------------------------------
 
 # INCLUDE BRANCHES TO THE SOURCE TREE
 # ----------------------------------------------------------------------------
 # Add the branches that should appear in the local Drupal source tree. By 
 # default the HEAD branch will be built if nothing is defined here.
-# e.g. IncludeBranch 6
+# e.g. IncludeBranch 6 
 IncludeBranch 5
 IncludeBranch 6
-IncludeBranch HEAD
 
 # INCLUDE MODULES WHEN BUILDING THE SOURCE TREE
 # ----------------------------------------------------------------------------
@@ -190,7 +194,6 @@ IncludeModule devel
 IncludeModule simplemenu
 IncludeModule logintoboggan
 IncludeModule pngfix
-IncludeModule typogrify
 
 # EXCLUDE MODULES WHEN BUILDING THE SOURCE TREE 
 # ----------------------------------------------------------------------------
@@ -210,7 +213,7 @@ LockModuleVersion image 5 1-8
 LockModuleVersion date 5 1-8
 LockModuleVersion actions 5 2-4
 LockModuleVersion workflow 5 2-2
-endOfExampleProfileContent
+_END_OF_SAMPLE_PROFILE_
 			fi;
 			status done;;
 			
@@ -228,6 +231,7 @@ endOfExampleProfileContent
 			fi;
 			status "Updating dstm profile...";
 			$EDITOR $PROFILE 2>>$ERROR_LOG;
+			# @todo $_timestamp
 			status done;;
 		
 		delete )
@@ -252,7 +256,78 @@ endOfExampleProfileContent
 			echo;
 			cat $PROFILE;;
 			
+		export )
+			status "Exporting your dstm profile to $_file";
+			cp $PROFILE $_file 2>>$ERROR_LOG;
+			status done;;
+		
+		import )
+			if [ -e $_file ]; then
+				status "Importing $_file to your dstm profile";
+				cp $_file $PROJECT 2>>$ERROR_LOG;
+				status done;
+			else
+				status error "I need a file to import. Could you include the filename in the command next time. Thanks!";
+			fi;;
+			
 	esac;
+}
+
+# Function: Read the local source tree to generate a profile
+# Usage: backup [file]
+# ----------------------------------------------------------------------------
+
+function backup() {
+	local _timestamp=`date +"%H-%M_%Y-%b-%d"`;
+	local _file=${1-$PWD/dstm-$_timestamp.backup};
+	local _tag;
+	local _version;
+	local _revision;
+	status "Backing up source tree description to $_file";
+	cat > $_file <<_END_OF_HEADER_;
+# ----------------------------------------------------------------------------
+# @file Drupal source tree manager (dstm) backup
+# Created by dstm backup as a description of the entire source tree.
+# @created $_timestamp
+# ----------------------------------------------------------------------------
+_END_OF_HEADER_
+	cd $TREE_CORE;
+	for i in `ls`; do
+		echo "IncludeBranch $i" >> $_file;
+		cd $TREE_MODULE/$i;
+		for j in `ls`; do
+			_tag=$(getCVStag module $i $j);
+			_version=`echo $_tag | cut -d'-' -f4`;
+			_revision=`echo $_tag | cut -d'-' -f5`;
+			if [ "$_revision" != '' ]; then
+				_version=$_version'-'$_revision;
+			fi;
+			echo "LockModuleVersion $j $i $_version" >> $_file;
+		done;
+	done;
+	status done;
+}
+
+
+# Function: Read a backup profile to build a local source tree
+# Usage: restore [file]
+# ----------------------------------------------------------------------------
+
+function restore() {
+	local _file=$PWD/$1;
+	if [ -e $_file ]; then
+		status "Restoring source tree from $_file";
+		PROFILE=$_file;
+		QUIET=1;
+		FORCE=1;
+		profileBranches;
+		profileModules;
+		build;
+		QUIET=;
+		status done;
+	else
+		status error "Unable to find $_file to restore from";
+	fi;
 }
 
 # Function: Create a list of branches from the profile
@@ -707,7 +782,7 @@ function cvsCoModule() {
 			_project_not_found=`cat $_log | grep 'could not read RCS file'`;
 			_tag_not_found=`cat $_log | grep 'no such tag'`;
 			
-			if [ "$VERBOSE" ]; then
+			if [[ "$VERBOSE" && -z "$QUIET" ]]; then
 				echo -n '.';
 			fi;
 			
@@ -722,7 +797,7 @@ function cvsCoModule() {
 			return;
 		fi;
 		
-		if [ "$VERBOSE" ]; then
+		if [[ "$VERBOSE" && -z "$QUIET" ]]; then
 			echo -n "$_try_tag";
 		fi;
 		
@@ -829,6 +904,7 @@ while (( "$#" )); do
 		init )  					clean; profile sample; build;;
 		clean )						clean;;
 		build )						build;;
+		backup )					backup;;
 		
 		# Context for an action
 		core | C )				CONTEXT=core;;
@@ -842,6 +918,9 @@ while (( "$#" )); do
 		update | up )			ACTION=update;;
 		delete | del )		ACTION=delete;;
 		info | i )				ACTION=info;;
+		import | im )			ACTION=import;;
+		export | ex )			ACTION=export;;
+		restore )					ACTION=restore;;
 		
 		# Parse project, branch and version based on context
 		*)
@@ -866,8 +945,23 @@ while (( "$#" )); do
 							fi;
 						fi;
 					fi;;
+				
+				profile | restore )
+					if [ -z "$FILE" ]; then
+						FILE=$1;
+					fi;;
 					
-			esac;; # case $CONTEXT
+			esac; # case $CONTEXT
+			
+			case "$ACTION" in
+			
+				restore )
+					if [ -z "$FILE" ]; then
+						FILE=$1;
+					fi;;
+					
+			esac;; # case $ACTION
+				
 			
 	esac # case $1
 	
@@ -883,6 +977,9 @@ case "$ACTION" in
 	update )	update $CONTEXT $PROJECT $BRANCH;;
 	delete )	delete $CONTEXT $PROJECT $BRANCH;;
 	info )		info $CONTEXT $PROJECT $BRANCH;;
+	import )  profile import $FILE;;
+	export )  profile export;;
+	restore ) restore $FILE;;
 esac
 
 exit 0;
