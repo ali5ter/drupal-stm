@@ -1,13 +1,11 @@
 #!/bin/bash
 # ----------------------------------------------------------------------------
-# @file dstm.sh
+# @file dstm
 # Simple Drupal src tree manager
-# @see color
+# @see color (http://code.google.com/p/ansi-color/)
 # @author Alister Lewis-Bowen [alister@different.com]
-# @todo Add the theme context
-# @todo Clean up the all context
-# @todo Documentation!
-# @todo Package for google-code
+# @todo Theme implementation
+# @todo source include files http://www.techsupportforum.com/conversation-pit/programming/66871-include-bash-shell-script.html
 # ----------------------------------------------------------------------------
 # This software is distributed under the the MIT License.
 #
@@ -50,7 +48,12 @@ CVS_CONTRIB_REPO=${DSTM_CVS_CONTRIB_REPO:-'-d:pserver:anonymous:anonymous@cvs.dr
 # Drupal contrib module directory in the CVS repository
 # ----------------------------------------------------------------------------
 
-CVS_CONTRIB_REPO_DIR=${DSTM_CVS_CONTRIB_REPO_DIR:-contributions/modules};
+CVS_MODULE_REPO_DIR=${DSTM_CVS_MODULE_REPO_DIR:-contributions/modules};
+
+# Drupal contrib theme directory in the CVS repository
+# ----------------------------------------------------------------------------
+
+CVS_THEME_REPO_DIR=${DSTM_CVS_THEME_REPO_DIR:-contributions/themes};
 
 # Core location in the Drupal source tree
 # ----------------------------------------------------------------------------
@@ -330,6 +333,85 @@ function restore() {
 	fi;
 }
 
+# Function: Create a sample Makefile and Makefile.local for a Drupal project
+# ----------------------------------------------------------------------------
+
+function makefile() {
+	status "Creating sample Makefile and Makefile.local for your Drupal project";
+	cat > Makefile.sample <<'_END_OF_MAKEFILE_';
+# ----------------------------------------------------------------------------
+# @file
+# Makefile to build a DOCUMENT_ROOT for your Drupal project.
+# NOTE: Edit the parameters in your Makefile.local file before running 'make'
+# ----------------------------------------------------------------------------
+
+include ./Makefile.local
+
+RSYNC := rsync -a -L --log-format='%f' --exclude '.svn' --exclude 'CVS' \
+--exclude '.DS_Store' --exclude '*~' --exclude 'bluemarine' \
+--exclude 'chameleon' --exclude 'pushbutton'
+
+EXT := drupal drupal-contrib
+
+sync: sync-ext
+
+sync-ext: $(addprefix sync-,$(EXT))
+
+sync-drupal: setup
+	$(RSYNC) $(SRC_ROOT)/$(DRUPAL_SRC)/ $(TGT_ROOT)
+
+sync-drupal-contrib: $(addprefix sync-drupal-contrib_,$(CONTRIB_MODULES))
+
+sync-drupal-contrib_%: setup
+	$(RSYNC) $(SRC_ROOT)/$(DRUPAL_CONTRIB_SRC)/$* \
+	$(TGT_ROOT)/sites/all/modules/contrib/
+
+setup:
+	mkdir -p $(TGT_ROOT)/sites/all/modules/contrib
+	mkdir -p $(TGT_ROOT)/sites/all/themes
+	mkdir -p $(TGT_ROOT)/sites/all/backup
+	mkdir -p $(TGT_ROOT)/sites/all/files
+
+refresh: sync
+_END_OF_MAKEFILE_
+	cat > Makefile.local.sample <<_END_OF_MAKEFILE_LOCAL_;
+# ----------------------------------------------------------------------------
+# @file 
+# Make parameters to customize your build
+# @author $USER
+# ----------------------------------------------------------------------------
+
+#
+# Base directory under which to find build trees
+#
+SRC_ROOT := $BASE
+
+#
+# Document root of the web server you wish to build
+#
+TGT_ROOT := [Change to your chosen DOCUMENT_ROOT]
+
+#
+# The Drupal core tree you wish to build against 
+#
+DRUPAL_SRC := $TREE_CORE/[Add your branch here]
+
+#
+# The Drupal contrib tree you wish to build against
+#
+DRUPAL_CONTRIB_SRC := $TREE_MODULE/[Add your branch here]
+
+#
+# The Drupal contrib modules you'd like to build into this doc root
+# This is a space delimited list of module project names,
+# e.g. devel logintoboggan pngfix simplemenu
+#
+CONTRIB_MODULES :=	\
+  [Add your project module names here]
+_END_OF_MAKEFILE_LOCAL_
+	status done;
+}
+
 # Function: Create a list of branches from the profile
 # ----------------------------------------------------------------------------
 
@@ -390,19 +472,23 @@ function get() {
 				fi;
 			fi;;
 			
-		module )
+		module | theme )
+		
+			if [ "$_context" == 'module' ]; then _cvsCo=cvsCoModule;
+			else _cvsCo=cvsCoTheme; fi;
+			
 			if [ "$_project" ]; then
 				if [ "$_branch" ]; then
-					cvsCoModule $_project $_branch $_version;
+					$_cvsCo $_project $_branch $_version;
 				else
 					if [ "$BRANCHES" ]; then
 						for ((i=0;i<${#BRANCHES[@]};i++)); do
 							if [ `cat $PROFILE | egrep ^ExcludeModule | egrep $_project | egrep ${BRANCHES[${i}]} | wc -l | tr -d ' '` == '0' ]; then
-								cvsCoModule $_project ${BRANCHES[${i}]} $_version;
+								$_cvsCo $_project ${BRANCHES[${i}]} $_version;
 							fi;
 						done;
 					else 
-						cvsCoModule $_project;
+						$_cvsCo $_project;
 					fi;
 				fi;
 			else
@@ -411,18 +497,18 @@ function get() {
 						if [ "$BRANCHES" ]; then
 							for ((j=0;j<${#BRANCHES[@]};j++)); do
 								if [ `cat $PROFILE | egrep ^ExcludeModule | egrep ${MODULES[${i}]} | egrep ${BRANCHES[${j}]} | wc -l | tr -d ' '` == '0' ]; then
-									cvsCoModule ${MODULES[${i}]} ${BRANCHES[${j}]} $_version;
+									$_cvsCo ${MODULES[${i}]} ${BRANCHES[${j}]} $_version;
 								fi;
 							done;
 						else 
-							cvsCoModule ${MODULES[${i}]};
+							$_cvsCo ${MODULES[${i}]};
 						fi;
 					done;
 				else 
-					cvsCoModule $_project;
+					$_cvsCo $_project;
 				fi;
 			fi;;
-			
+						
 		profile )
 			profile sample;;
 			
@@ -458,29 +544,37 @@ function update() {
 					cvsUpCore $_branch;;	
 			esac;;
 			
-		module )
-			cd $TREE_MODULE;
+		module | theme )
+			if [ "$_context" == 'module' ]; then 
+				_dir=$TREE_MODULE;
+				_cvsCo=cvsCoModule;
+			else 
+				_dir=$TREE_THEME;
+				_cvsCo=cvsCoTheme; 
+			fi;
+
+			cd $_dir;
 			case "$_project" in
 				'' | all )
 					if [[ -d $_branch && "$_branch" ]]; then
 						cd $_branch;
 						for _project in `ls`; do
-							cvsUpModule $_project $_branch;
+							$_cvsCo $_project $_branch;
 						done;
 					else
-						for _dir in `ls`; do
-							cd $TREE_MODULE/$_dir;
+						for _i in `ls`; do
+							cd $_dir/$_i;
 							for _project in `ls`; do
-								cvsUpModule $_project $_dir;
+								$_cvsCo $_project $_i;
 							done;
 						done;
 					fi;;	
 				* )
 					if [ "$_branch" ]; then
-						cvsUpModule $_project $_branch;
+						$_cvsCo $_project $_branch;
 					else
-						for _dir in `find . | egrep $_project\\.info | cut -d'/' -f2`; do
-							cvsUpModule $_project $_dir; 
+						for _i in `find . | egrep $_project\\.info | cut -d'/' -f2`; do
+							$_cvsCo $_project $_i; 
 						done;
 					fi;; 
 			esac;;
@@ -525,33 +619,39 @@ function delete() {
 					status done;;
 			esac;;
 			
-		module )
-			cd $TREE_MODULE;
+		module | theme )
+			if [ "$_context" == 'module' ]; then 
+				_dir=$TREE_MODULE;
+			else 
+				_dir=$TREE_THEME;
+			fi;
+			
+			cd $_dir;
 			case "$_project" in
 				'' | all )
 					if [[ -d $_branch && "$_branch" ]]; then
-						status "Deleting all modules from $_branch";
+						status "Deleting all ${_context}s from $_branch";
 						rm -fR ./$_branch 2>>$ERROR_LOG;
 					else
-						status "Deleting all modules";
+						status "Deleting all ${_context}s";
 						rm -fR ./ 2>>$ERROR_LOG;
 					fi;
 					status done;;
 				* )
 					if [ "$_branch" ]; then
 						if [ "$_branch" == 'HEAD' ]; then
-							status "Deleting module $_project ($_branch)";
+							status "Deleting $_project $_context ($_branch)";
 						else
-							status "Deleting module $_project (DRUPAL-$_branch)";
+							status "Deleting $_project $_context (DRUPAL-$_branch)";
 						fi;
 						rm -fR ./$_branch/$_project 2>>$ERROR_LOG;
 						status done;
 					else
 						for _dir in `find . | egrep $_project\\.info | cut -d'/' -f2`; do
 							if [ "$_dir" == 'HEAD' ]; then
-								status "Deleting module $_project ($_dir)";
+								status "Deleting $_project $_context ($_dir)";
 							else
-								status "Deleting module $_project (DRUPAL-$_dir)";
+								status "Deleting $_project $_context (DRUPAL-$_dir)";
 							fi;
 							rm -fR ./$_dir/$_project 2>>$ERROR_LOG;
 							status done;
@@ -606,10 +706,12 @@ function info() {
 			
 		module | theme )
 			if [ "$_context" == 'module' ]; then
-				cd $TREE_MODULE;
+				_dir=$TREE_MODULE;
 			else 
-				cd $TREE_THEME;
+				_dir=$TREE_THEME;
 			fi;
+			cd $_dir;
+			
 			echo;
 			echo "$(color bd)Drupal $_context contrib...$(color)";
 			echo;
@@ -620,23 +722,23 @@ function info() {
 					if [[ -d $_branch && "$_branch" ]]; then
 						cd $_branch;
 						for _project in `ls`; do
-							printf "$_line" $_project $_branch $(getCVStag module $_branch $_project) "$(getModuleDescription $_project $_branch)";
+							printf "$_line" $_project $_branch $(getCVStag $_context $_branch $_project) "$(getModuleDescription $_project $_branch)";
 						done;
 					else
-						for _dir in `ls`; do
-							cd $TREE_MODULE/$_dir;
+						for _i in `ls`; do
+							cd $_dir/$_i;
 							for _project in `ls`; do
-								printf "$_line" $_project $_dir $(getCVStag module $_dir $_project) "$(getModuleDescription $_project $_dir)";
+								printf "$_line" $_project $_i $(getCVStag $_context $_i $_project) "$(getModuleDescription $_project $_i)";
 							done;
 						done;
 					fi;;	
 				* )
 					if [ "$_branch" ]; then
-						printf "$_line" $_project $_branch $(getCVStag module $_branch $_project) "$(getModuleDescription $_project $_branch)";
+						printf "$_line" $_project $_branch $(getCVStag $_context $_branch $_project) "$(getModuleDescription $_project $_branch)";
 
 					else
-						for _dir in `find . | egrep $_project\\.info | cut -d'/' -f2`; do
-							printf "$_line" $_project $_dir $(getCVStag module $_dir $_project) "$(getModuleDescription $_project $_dir)";
+						for _i in `find . | egrep $_project\\.info | cut -d'/' -f2`; do
+							printf "$_line" $_project $_i $(getCVStag $_context $_i $_project) "$(getModuleDescription $_project $_i)";
 						done;
 					fi;; 
 			esac;;
@@ -667,8 +769,7 @@ function cvsCoCore() {
 }
 
 # Function: Check out Drupal module project
-# Usage: delete [core|all] [branch]
-# Usage: delete [module|theme|all] [project|all] [branch] [version]
+# Usage: cvsCoModule project [branch] [version]
 # ----------------------------------------------------------------------------
 
 function cvsCoModule() {
@@ -713,9 +814,9 @@ function cvsCoModule() {
 		# Check out a specific version...
 	
 		status " ($_tag)";
-		cvs $CVS_CONTRIB_REPO -Q co -d $_project -r $_tag $CVS_CONTRIB_REPO_DIR/$_project
+		cvs $CVS_CONTRIB_REPO -Q co -d $_project -r $_tag $CVS_MODULE_REPO_DIR/$_project
 		if [ ! -d $_project ]; then
-			status "unable to checkout this project module";
+			status "unable to checkout this module project";
 			status done;
 			return;
 		fi;
@@ -739,7 +840,7 @@ function cvsCoModule() {
 		else _checkout=$_checkout_by_version;
 		fi;
 		
-		until [[ -d $_project || "$_project_not_found" != ''  || "$_exit" == 'YES' ]]; do
+		until [[ -d $_project || "$_project_not_found" != '' || "$_project_disappeared" != '' || "$_exit" == 'YES' ]]; do
 		
 			case "$_checkout" in
 			
@@ -777,9 +878,10 @@ function cvsCoModule() {
 					;;
 			esac;
 			
-			cvs $CVS_CONTRIB_REPO -Q co -d $_project -r $_try_tag $CVS_CONTRIB_REPO_DIR/$_project 2>$_log;
+			cvs $CVS_CONTRIB_REPO -Q co -d $_project -r $_try_tag $CVS_MODULE_REPO_DIR/$_project 2>$_log;
 			
 			_project_not_found=`cat $_log | grep 'could not read RCS file'`;
+			_project_disappeared=`cat $_log | grep 'has disappeared'`;
 			_tag_not_found=`cat $_log | grep 'no such tag'`;
 			
 			if [[ "$VERBOSE" && -z "$QUIET" ]]; then
@@ -791,8 +893,8 @@ function cvsCoModule() {
 		cat $_log >> $ERROR_LOG;
 		rm $_log;
 		
-		if [ "$_project_not_found" != '' ]; then
-			status "unable to find this project module";
+		if [[ "$_project_not_found" != '' || "$_project_disappeared" != '' ]]; then
+			status "unable to find this module project";
 			status done;
 			return;
 		fi;
@@ -804,6 +906,146 @@ function cvsCoModule() {
 	fi;
 	
 
+	status done;
+}
+
+# Function: Check out Drupal theme project
+# Usage: cvsCoTheme project [branch] [version]
+# ----------------------------------------------------------------------------
+
+function cvsCoTheme() {
+	local _project=${1:-devel};
+	local _branch=${2:-HEAD};
+	local _version=$3;
+	
+	if [[ -e $PROFILE && `cat $PROFILE | egrep ^LockThemeVersion | egrep $_project | egrep $_branch | wc -l | tr -d ' '` != '0' ]]; then
+		_version=`cat $PROFILE | egrep ^LockThemeVersion | egrep $_project | egrep $_branch | awk {'print $4'}`;
+	fi;
+
+	if [ ! -d $TREE_THEME/$_branch ]; then 
+		mkdir -p $TREE_THEME/$_branch;
+	fi;
+	cd $TREE_THEME/$_branch;
+	
+	local _tag;
+	case "$_branch" in
+		HEAD )	_tag=HEAD; _dir=HEAD;;
+		* )			_tag=DRUPAL-$_branch; _dir=$_project;;
+	esac;
+	
+	if [ "$_version" ]; then
+		# @todo _version =~ s/./-/g
+		_tag=$_tag--$_version;
+	fi;
+	
+	status "Fetching $_project theme ($_tag)";
+
+	if [ "$FORCE" ]; then
+		rm -fR $_project;
+	fi;
+	
+	if [ -d $_project ]; then 
+		status "already exists locally";
+		status done;
+		return;
+	fi;
+
+	if [ "$_version" ]; then
+	
+		# Check out a specific version...
+	
+		status " ($_tag)";
+		cvs $CVS_CONTRIB_REPO -Q co -d $_project -r $_tag $CVS_THEME_REPO_DIR/$_project
+		if [ ! -d $_project ]; then
+			status "unable to checkout this theme project";
+			status done;
+			return;
+		fi;
+	
+	else
+	
+		# Find latest version...
+		
+		local _checkout_by_version=0
+		local _checkout_by_branch=1
+		local _checkout_head=2
+		local _project_not_found;
+		local _tag_not_found;
+		local _try_tag;
+		local _exit=NO;
+		local _log=.tmp_log;
+		
+		touch $_log;
+		
+		if [ "$_tag" == 'HEAD' ]; then _checkout=$_checkout_head;
+		else _checkout=$_checkout_by_version;
+		fi;
+		
+		until [[ -d $_project || "$_project_not_found" != '' || "$_project_disappeared" != '' || "$_exit" == 'YES' ]]; do
+		
+			case "$_checkout" in
+			
+				"$_checkout_by_version" )
+					if [ -z "$_try_tag" ]; then
+						_version=8;	# not spotted any versions higher than 7
+						_try_tag=$_tag--$_version;
+					fi;
+					if (("$_version" > "1")); then
+						_version=$[$_version -1];
+						_try_tag=$_tag--$_version;
+					else 
+						_checkout=$_checkout_by_branch;
+					fi;
+					;;
+					
+				"$_checkout_by_branch" )
+					if [ "$_try_tag" == "$_tag" ]; then
+						_checkout=$_checkout_head;
+					else
+						_try_tag=$_tag;
+					fi;
+					;;
+					
+				"$_checkout_head" )
+				  if [ "$_try_tag" == 'HEAD' ]; then
+						_exit=YES;
+					else
+						_try_tag=HEAD;
+					fi;
+				  ;;
+				  
+				* )
+					_exit=YES;
+					;;
+			esac;
+			
+			cvs $CVS_CONTRIB_REPO -Q co -d $_project -r $_try_tag $CVS_THEME_REPO_DIR/$_project 2>$_log;
+			
+			_project_not_found=`cat $_log | grep 'could not read RCS file'`;
+			_project_disappeared=`cat $_log | grep 'has disappeared'`;
+			_tag_not_found=`cat $_log | grep 'no such tag'`;
+			
+			if [[ "$VERBOSE" && -z "$QUIET" ]]; then
+				echo -n '.';
+			fi;
+			
+		done;
+	
+		cat $_log >> $ERROR_LOG;
+		rm $_log;
+		
+		if [[ "$_project_not_found" != '' || "$_project_disappeared" != '' ]]; then
+			status "unable to find this theme project";
+			status done;
+			return;
+		fi;
+		
+		if [[ "$VERBOSE" && -z "$QUIET" ]]; then
+			echo -n "$_try_tag";
+		fi;
+		
+	fi;
+	
 	status done;
 }
 
@@ -845,6 +1087,24 @@ function cvsUpModule() {
 		status done;
 	else
 		status error "Oops! It seems module $_project $_branch does not exist. Perhaps you should use the dstm update module $_project $_branch command.";
+	fi;
+}
+
+# Function: Update Drupal theme project
+# Usage: cvsUpTheme [project] [branch]
+# ----------------------------------------------------------------------------
+
+function cvsUpTheme() {
+	local _project=${1:-devel};
+	local _branch=${2:-HEAD};
+	
+	if [ -d $TREE_THEME/$_branch/$_project ]; then
+		cd $TREE_THEME/$_branch/$_project;
+		status "Updating $_project theme ($_branch)";
+		cvs -Q up -d -P 2>>$ERROR_LOG;
+		status done;
+	else
+		status error "Oops! It seems theme $_project $_branch does not exist. Perhaps you should use the dstm update theme $_project $_branch command.";
 	fi;
 }
 
@@ -905,6 +1165,7 @@ while (( "$#" )); do
 		clean )						clean;;
 		build )						build;;
 		backup )					backup;;
+		makefile )				makefile;;
 		
 		# Context for an action
 		core | C )				CONTEXT=core;;
