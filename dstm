@@ -4,7 +4,6 @@
 # Simple Drupal src tree manager
 # @see color (http://code.google.com/p/ansi-color/)
 # @author Alister Lewis-Bowen [alister@different.com]
-# @todo Theme implementation
 # @todo source include files http://www.techsupportforum.com/conversation-pit/programming/66871-include-bash-shell-script.html
 # ----------------------------------------------------------------------------
 # This software is distributed under the the MIT License.
@@ -205,6 +204,13 @@ IncludeModule pngfix
 # e.g. ExcludeModule backup_migrate 6
 ExcludeModule backup_migrate 6
 
+# INCLUDE THEME WHEN BUILDING THE SOURCE TREE
+# ----------------------------------------------------------------------------
+# Add the themes that should be included for each branch defined above. These
+# are checked out of CVS when the source tree is built. 
+# e.g. IncludeTheme zen
+IncludeTheme zen
+
 # LOCK A MODULE TO A SPECIFIC VERSION
 # ----------------------------------------------------------------------------
 # To help define module version dependencies within branches, use the
@@ -216,6 +222,14 @@ LockModuleVersion image 5 1-8
 LockModuleVersion date 5 1-8
 LockModuleVersion actions 5 2-4
 LockModuleVersion workflow 5 2-2
+
+# LOCK A THEME TO A SPECIFIC VERSION
+# ----------------------------------------------------------------------------
+# To help define theme version dependencies within branches, use the
+# LockThemeVersion stanza to specify a version for a branch. This is override
+# any 'dstm get' command for the defined module, effectively locking down its
+# version.
+# e.g. LockThemeVersion zen 5 1-1
 _END_OF_SAMPLE_PROFILE_
 			fi;
 			status done;;
@@ -384,7 +398,7 @@ _END_OF_MAKEFILE_
 #
 # Base directory under which to find build trees
 #
-SRC_ROOT := $BASE
+SRC_ROOT := /
 
 #
 # Document root of the web server you wish to build
@@ -722,23 +736,23 @@ function info() {
 					if [[ -d $_branch && "$_branch" ]]; then
 						cd $_branch;
 						for _project in `ls`; do
-							printf "$_line" $_project $_branch $(getCVStag $_context $_branch $_project) "$(getModuleDescription $_project $_branch)";
+							printf "$_line" $_project $_branch $(getCVStag $_context $_branch $_project) "$(getInfoFileDescription $_context $_branch $_project)";
 						done;
 					else
 						for _i in `ls`; do
 							cd $_dir/$_i;
 							for _project in `ls`; do
-								printf "$_line" $_project $_i $(getCVStag $_context $_i $_project) "$(getModuleDescription $_project $_i)";
+								printf "$_line" $_project $_i $(getCVStag $_context $_i $_project) "$(getInfoFileDescription $_context $_i $_project)";
 							done;
 						done;
 					fi;;	
 				* )
 					if [ "$_branch" ]; then
-						printf "$_line" $_project $_branch $(getCVStag $_context $_branch $_project) "$(getModuleDescription $_project $_branch)";
+						printf "$_line" $_project $_branch $(getCVStag $_context $_branch $_project) "$(getInfoFileDescription $_context $_branch $_project)";
 
 					else
 						for _i in `find . | egrep $_project\\.info | cut -d'/' -f2`; do
-							printf "$_line" $_project $_i $(getCVStag $_context $_i $_project) "$(getModuleDescription $_project $_i)";
+							printf "$_line" $_project $_i $(getCVStag $_context $_i $_project) "$(getInfoFileDescription $_context $_i $_project)";
 						done;
 					fi;; 
 			esac;;
@@ -1123,19 +1137,30 @@ function getCVStag() {
 			_tag=`cat $TREE_CORE/$_branch/CVS/Tag`;;
 		module )
 			_tag=`cat $TREE_MODULE/$_branch/$_project/CVS/Tag`;;
+		theme )
+			_tag=`cat $TREE_THEME/$_branch/$_project/CVS/Tag`;;
 	esac;
 	
 	echo -n ${_tag:1};
 }
 
 # Function: Display module description within the Drupal source tree
-# Usage: getModuleDescription [project] [branch]
+# Usage: getInfoFileDescription [context] [branch] [project] 
 # ----------------------------------------------------------------------------
 
-function getModuleDescription() {
-	local _project=${1:-devel};
+function getInfoFileDescription() {
+	local _context=${1:-module};
 	local _branch=${2:-HEAD};
-	local _desc=`find $TREE_MODULE/$_branch/$_project -name $_project.info | xargs egrep "^description" | cut -f2 -d '=' | tr -d '\"'`;
+	local _project=${3:-devel};
+	local _dir;
+	
+	case "$_context" in
+		core )		_dir=$TREE_CORE;;
+		module )	_dir=$TREE_MODULE;;
+		theme )		_dir=$TREE_THEME;;
+	esac;
+	
+	local _desc=`find $_dir/$_branch/$_project -name $_project.info | xargs egrep "^description" | cut -f2 -d '=' | tr -d '\"'`;
 	echo -n ${_desc:1};
 }
 
