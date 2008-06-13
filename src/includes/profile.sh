@@ -32,8 +32,7 @@ function profileModules() {
 
 function profile() {
 	local _action=${1:-show};
-	local _timestamp=`date +"%H-%M_%Y-%b-%d"`;
-	local _file=${2-./dstm-$_timestamp.profile};
+	local _file=${2-./dstm-$TIMESTAMP.profile};
 	
 	case "$_action" in
 		sample )
@@ -42,8 +41,8 @@ function profile() {
 				cat > $PROFILE <<_END_OF_SAMPLE_PROFILE_;
 # ----------------------------------------------------------------------------
 # @file Drupal source tree manager (dstm) Profile
-# @created $_timestamp
-# @modified $_timestamp
+# @created $TIMESTAMP
+# @modified $TIMESTAMP
 # ----------------------------------------------------------------------------
 
 # INCLUDE BRANCHES TO THE SOURCE TREE
@@ -116,7 +115,7 @@ _END_OF_SAMPLE_PROFILE_
 			fi;
 			status "Updating dstm profile...";
 			$EDITOR $PROFILE 2>>$ERROR_LOG;
-			# @todo $_timestamp
+			# @todo $TIMESTAMP
 			status done;;
 		
 		delete )
