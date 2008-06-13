@@ -3,7 +3,6 @@
 # ----------------------------------------------------------------------------
 
 function backup() {
-	local _timestamp=`date +"%H-%M_%Y-%b-%d"`;
 	local _file=${1-$PWD/dstm-$_timestamp.backup};
 	local _tag;
 	local _version;
@@ -13,7 +12,7 @@ function backup() {
 # ----------------------------------------------------------------------------
 # @file Drupal source tree manager (dstm) backup
 # Created by dstm backup as a description of the entire source tree.
-# @created $_timestamp
+# @created $TIMESTAMP
 # ----------------------------------------------------------------------------
 _END_OF_HEADER_
 	cd $TREE_CORE;
