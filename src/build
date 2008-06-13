@@ -16,8 +16,6 @@ INC="globals.sh help.sh misc.sh general_actions.sh profile.sh \
 backup_restore.sh makefile.sh get.sh update.sh delete.sh info.sh cvs.sh \
 main.sh";
 
-rm -fR $TARGET;
-
 cat > $TARGET <<_END_OF_HEADER_;
 #!/bin/bash
 # ----------------------------------------------------------------------------
