@@ -6,7 +6,7 @@
 # ----------------------------------------------------------------------------
 
 VERSION=${1:-latest};
-PACKAGE_NAME=stm_${VERSION};
+PACKAGE_NAME=dstm_${VERSION};
 TARGET=../dstm;
 FILES='dstm README LICENSE';
 INC_DIR=includes
