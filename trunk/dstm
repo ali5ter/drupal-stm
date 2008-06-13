@@ -4,7 +4,6 @@
 # Simple Drupal src tree manager
 # @see color (http://code.google.com/p/ansi-color/)
 # @author Alister Lewis-Bowen [alister@different.com]
-# @todo source include files http://www.techsupportforum.com/conversation-pit/programming/66871-include-bash-shell-script.html
 # ----------------------------------------------------------------------------
 # This software is distributed under the the MIT License.
 #
@@ -136,6 +135,47 @@ function status() {
 	esac;
 }
 
+# Function: Display CVS Tag for a context within the Drupal source tree
+# Usage: getCVStag [context] [branch] [project]
+# ----------------------------------------------------------------------------
+
+function getCVStag() {
+	local _context=${1:-module};
+	local _project=${3:-devel};
+	local _branch=${2:-HEAD};
+	local _tag;
+
+	case "$_context" in
+		core )
+			_tag=`cat $TREE_CORE/$_branch/CVS/Tag`;;
+		module )
+			_tag=`cat $TREE_MODULE/$_branch/$_project/CVS/Tag`;;
+		theme )
+			_tag=`cat $TREE_THEME/$_branch/$_project/CVS/Tag`;;
+	esac;
+	
+	echo -n ${_tag:1};
+}
+
+# Function: Display module description within the Drupal source tree
+# Usage: getInfoFileDescription [context] [branch] [project] 
+# ----------------------------------------------------------------------------
+
+function getInfoFileDescription() {
+	local _context=${1:-module};
+	local _branch=${2:-HEAD};
+	local _project=${3:-devel};
+	local _dir;
+	
+	case "$_context" in
+		core )		_dir=$TREE_CORE;;
+		module )	_dir=$TREE_MODULE;;
+		theme )		_dir=$TREE_THEME;;
+	esac;
+	
+	local _desc=`find $_dir/$_branch/$_project -name $_project.info | xargs egrep "^description" | cut -f2 -d '=' | tr -d '\"'`;
+	echo -n ${_desc:1};
+}
 # Function: Clean the local Drupal source tree
 # ----------------------------------------------------------------------------
 
@@ -154,6 +194,40 @@ function clean() {
 	mkdir -p $TREE_CORE $TREE_MODULE $TREE_THEME;
 	touch $ERROR_LOG;
 	status done;
+}
+
+# Function: Build the local Drupal source tree
+# ----------------------------------------------------------------------------
+
+function build() {
+	get core;
+	get module;
+	get theme;
+}
+# Function: Create a list of branches from the profile
+# ----------------------------------------------------------------------------
+
+function profileBranches() {
+	if [[ -e $PROFILE && `cat $PROFILE | egrep ^IncludeBranch | wc -l | tr -d ' '` != '0' ]]; then
+		local _index=0;
+		for _branch in `cat $PROFILE | egrep ^IncludeBranch | awk {'print $2'}`; do
+			BRANCHES[$_index]=$_branch;
+			(( _index += 1 ));
+		done;
+	fi;
+}
+
+# Function: Create a list of include modules from the profile
+# ----------------------------------------------------------------------------
+
+function profileModules() {
+	if [[ -e $PROFILE && `cat $PROFILE | egrep ^IncludeModule | wc -l | tr -d ' '` != '0' ]]; then
+		local _index=0;
+	 	for _project in `cat $PROFILE | egrep ^IncludeModule | awk {'print $2'}`; do
+	 		MODULES[$_index]=$_project;
+			(( _index += 1 ));
+	 	done;
+	fi;
 }
 
 # Function: Example data for a dstm profile
@@ -316,7 +390,7 @@ _END_OF_HEADER_
 			_tag=$(getCVStag module $i $j);
 			_version=`echo $_tag | cut -d'-' -f4`;
 			_revision=`echo $_tag | cut -d'-' -f5`;
-			if [ "$_revision" != '' ]; then
+			if [[ "$_revision" != '' && "$_tag" != 'HEAD' ]]; then
 				_version=$_version'-'$_revision;
 			fi;
 			echo "LockModuleVersion $j $i $_version" >> $_file;
@@ -346,7 +420,6 @@ function restore() {
 		status error "Unable to find $_file to restore from";
 	fi;
 }
-
 # Function: Create a sample Makefile and Makefile.local for a Drupal project
 # ----------------------------------------------------------------------------
 
@@ -425,42 +498,6 @@ CONTRIB_MODULES :=	\
 _END_OF_MAKEFILE_LOCAL_
 	status done;
 }
-
-# Function: Create a list of branches from the profile
-# ----------------------------------------------------------------------------
-
-function profileBranches() {
-	if [[ -e $PROFILE && `cat $PROFILE | egrep ^IncludeBranch | wc -l | tr -d ' '` != '0' ]]; then
-		local _index=0;
-		for _branch in `cat $PROFILE | egrep ^IncludeBranch | awk {'print $2'}`; do
-			BRANCHES[$_index]=$_branch;
-			(( _index += 1 ));
-		done;
-	fi;
-}
-
-# Function: Create a list of include modules from the profile
-# ----------------------------------------------------------------------------
-
-function profileModules() {
-	if [[ -e $PROFILE && `cat $PROFILE | egrep ^IncludeModule | wc -l | tr -d ' '` != '0' ]]; then
-		local _index=0;
-	 	for _project in `cat $PROFILE | egrep ^IncludeModule | awk {'print $2'}`; do
-	 		MODULES[$_index]=$_project;
-			(( _index += 1 ));
-	 	done;
-	fi;
-}
-
-# Function: Build the local Drupal source tree
-# ----------------------------------------------------------------------------
-
-function build() {
-	get core;
-	get module;
-	get theme;
-}
-
 # Function: Retrieve/get a context within the Drupal source tree
 # Usage: get [core|module|theme] [project] [branch] [version]
 # ----------------------------------------------------------------------------
@@ -598,7 +635,75 @@ function update() {
 			
 	esac;
 }
+# Function: Update a context within the Drupal source tree
+# Usage: update [core|all] [branch]
+# Usage: update [module|theme|all] [project|all] [branch]
+# ----------------------------------------------------------------------------
 
+function update() {
+	local _context=${1:-$CONTEXT};
+	local _project=${2:-$PROJECT};
+	local _branch=${3:-$BRANCH};
+	
+	case "$_context" in
+	
+		'' | all )
+			update core;
+			update module;
+			#update theme;
+			;;
+			
+		core )
+			cd $TREE_CORE;
+			case "$_branch" in
+				'' | all )
+					for _dir in `ls`; do
+						cvsUpCore $_dir; 
+					done;;
+				* )
+					cvsUpCore $_branch;;	
+			esac;;
+			
+		module | theme )
+			if [ "$_context" == 'module' ]; then 
+				_dir=$TREE_MODULE;
+				_cvsCo=cvsCoModule;
+			else 
+				_dir=$TREE_THEME;
+				_cvsCo=cvsCoTheme; 
+			fi;
+
+			cd $_dir;
+			case "$_project" in
+				'' | all )
+					if [[ -d $_branch && "$_branch" ]]; then
+						cd $_branch;
+						for _project in `ls`; do
+							$_cvsCo $_project $_branch;
+						done;
+					else
+						for _i in `ls`; do
+							cd $_dir/$_i;
+							for _project in `ls`; do
+								$_cvsCo $_project $_i;
+							done;
+						done;
+					fi;;	
+				* )
+					if [ "$_branch" ]; then
+						$_cvsCo $_project $_branch;
+					else
+						for _i in `find . | egrep $_project\\.info | cut -d'/' -f2`; do
+							$_cvsCo $_project $_i; 
+						done;
+					fi;; 
+			esac;;
+			
+		profile )
+			profile update;;
+			
+	esac;
+}
 # Function: Delete a context within the Drupal source tree
 # Usage: delete [core|module|theme] [project] [branch]
 # ----------------------------------------------------------------------------
@@ -678,7 +783,6 @@ function delete() {
 			
 	esac;
 }
-
 # Function: Information for a context within the Drupal source tree
 # Usage: info [core|all] [branch|-]
 # Usage: info [module|theme|all] [project|-] [branch]
@@ -762,7 +866,6 @@ function info() {
 			
 	esac;
 }
-
 # Function: Check out Drupal core
 # Usage: cvsCoCore [branch]
 # ----------------------------------------------------------------------------
@@ -1121,49 +1224,6 @@ function cvsUpTheme() {
 		status error "Oops! It seems theme $_project $_branch does not exist. Perhaps you should use the dstm update theme $_project $_branch command.";
 	fi;
 }
-
-# Function: Display CVS Tag for a context within the Drupal source tree
-# Usage: getCVStag [context] [branch] [project]
-# ----------------------------------------------------------------------------
-
-function getCVStag() {
-	local _context=${1:-module};
-	local _project=${3:-devel};
-	local _branch=${2:-HEAD};
-	local _tag;
-
-	case "$_context" in
-		core )
-			_tag=`cat $TREE_CORE/$_branch/CVS/Tag`;;
-		module )
-			_tag=`cat $TREE_MODULE/$_branch/$_project/CVS/Tag`;;
-		theme )
-			_tag=`cat $TREE_THEME/$_branch/$_project/CVS/Tag`;;
-	esac;
-	
-	echo -n ${_tag:1};
-}
-
-# Function: Display module description within the Drupal source tree
-# Usage: getInfoFileDescription [context] [branch] [project] 
-# ----------------------------------------------------------------------------
-
-function getInfoFileDescription() {
-	local _context=${1:-module};
-	local _branch=${2:-HEAD};
-	local _project=${3:-devel};
-	local _dir;
-	
-	case "$_context" in
-		core )		_dir=$TREE_CORE;;
-		module )	_dir=$TREE_MODULE;;
-		theme )		_dir=$TREE_THEME;;
-	esac;
-	
-	local _desc=`find $_dir/$_branch/$_project -name $_project.info | xargs egrep "^description" | cut -f2 -d '=' | tr -d '\"'`;
-	echo -n ${_desc:1};
-}
-
 # Pre process
 # ----------------------------------------------------------------------------
 
@@ -1267,5 +1327,3 @@ case "$ACTION" in
 	export )  profile export;;
 	restore ) restore $FILE;;
 esac
-
-exit 0;
