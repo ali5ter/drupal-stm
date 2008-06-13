@@ -7,9 +7,11 @@
 
 VERSION=${1:-latest};
 PACKAGE_NAME=dstm_${VERSION};
+TIMESTAMP=`date +"%H-%M_%Y-%b-%d"`;
 TARGET=../dstm;
 FILES='dstm README LICENSE';
 INC_DIR=includes
+TODO=`cat $INC_DIR/TODO`;
 INC="globals.sh help.sh misc.sh general_actions.sh profile.sh \
 backup_restore.sh makefile.sh get.sh update.sh delete.sh info.sh cvs.sh \
 main.sh";
@@ -23,6 +25,8 @@ cat > $TARGET <<_END_OF_HEADER_;
 # Simple Drupal src tree manager
 # @see color (http://code.google.com/p/ansi-color/)
 # @author Alister Lewis-Bowen [alister@different.com]
+# @modified $TIMESTAMP
+$TODO
 # ----------------------------------------------------------------------------
 # This software is distributed under the the MIT License.
 #
