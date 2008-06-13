@@ -1,7 +1,7 @@
 #!/bin/bash
 # ----------------------------------------------------------------------------
 # @file build
-# Create a color package for distribution
+# Create a dstm package for distribution
 # @author Alister Lewis-Bowen [alister@different.com]
 # ----------------------------------------------------------------------------
 
@@ -55,7 +55,7 @@ for include in $INC; do
 done;
 
 cd ..;
-rm -fR *.zip *.gz;
+#rm -fR *.zip *.gz;
 tar -cvf ${PACKAGE_NAME}.tar $FILES;
 gzip ${PACKAGE_NAME}.tar ;
 zip ${PACKAGE_NAME}.zip $FILES;
